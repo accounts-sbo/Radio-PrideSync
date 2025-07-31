@@ -243,41 +243,25 @@ class StandaloneRadio:
             logger.error(f"Fout bij cleanup: {e}")
 
 def main():
-    """Hoofdfunctie - start radio op 96.8 MHz"""
-    print("🎵 Eenvoudige Radio - 96.8 MHz")
-    print("=" * 35)
-    
-    radio = SimpleRadio()
-    
+    """Hoofdfunctie - start standalone radio op 96.8 MHz"""
+    logger.info("🎵 Standalone Radio - 96.8 MHz")
+    logger.info("=" * 35)
+
+    radio = StandaloneRadio()
+
     try:
-        # Initialiseer radio
-        if not radio.initialize():
-            print("❌ Kan radio niet initialiseren")
+        # Start standalone radio (doet alles automatisch)
+        success = radio.run_standalone()
+        if not success:
+            logger.error("❌ Radio kon niet starten")
             return
-        
-        # Stem af op 96.8 MHz
-        if not radio.set_frequency(96.8):
-            print("❌ Kan niet afstemmen op 96.8 MHz")
-            return
-        
-        # Toon signaalsterkte
-        signal = radio.get_signal_strength()
-        print(f"📶 Signaalsterkte: {signal}/75")
-        
-        print("\n🎧 Radio is nu afgestemd op 96.8 MHz")
-        print("   Sluit je koptelefoon aan en luister!")
-        print("   Druk Ctrl+C om te stoppen")
-        
-        # Blijf draaien tot gebruiker stopt
-        while True:
-            time.sleep(1)
-            
+
     except KeyboardInterrupt:
-        print("\n\n👋 Radio wordt gestopt...")
+        logger.info("\n\n👋 Radio wordt gestopt...")
     except Exception as e:
-        print(f"❌ Onverwachte fout: {e}")
+        logger.error(f"❌ Onverwachte fout: {e}")
     finally:
-        radio.cleanup()
+        radio.shutdown()
 
 if __name__ == "__main__":
     main()
