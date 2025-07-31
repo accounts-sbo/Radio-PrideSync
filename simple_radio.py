@@ -11,12 +11,13 @@ import signal
 import logging
 from pathlib import Path
 
-# Setup logging
+# Setup logging - schrijf naar home directory
+log_file = str(Path.home() / 'radio.log')
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/radio.log'),
+        logging.FileHandler(log_file),
         logging.StreamHandler()
     ]
 )
