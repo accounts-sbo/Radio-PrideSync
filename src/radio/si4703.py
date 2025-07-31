@@ -49,7 +49,7 @@ class SI4703Radio:
         self.gpio2_pin = config['gpio_pins']['gpio2']
         
         # Radio status
-        self.frequency = config.get('default_frequency', 100.0)
+        self.frequency = config.get('default_frequency', 96.8)
         self.volume = config['volume'].get('default', 8)
         self.powered = False
 
