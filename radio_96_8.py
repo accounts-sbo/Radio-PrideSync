@@ -89,12 +89,32 @@ class Radio968:
             
             # Power up de chip
             logger.info("SI4703 wordt ingeschakeld...")
+            # POWERCFG: DMUTE=1 (audio on), ENABLE=1 (power on), DISABLE=0 (tuner enabled)
             self._write_register(self.POWERCFG, 0x4001)  # Enable + Power up
             time.sleep(0.5)
-            
+
+            # Controleer of chip powered up is
+            status = self._read_register(self.STATUSRSSI)
+            logger.info(f"Power status: 0x{status:04X}")
+
+            # Enable tuner expliciet (zorg dat DISABLE bit (bit 6) = 0)
+            logger.info("Tuner wordt expliciet ingeschakeld...")
+            # POWERCFG bits: DSMUTE=1, DMUTE=1, MONO=0, RDSM=0, SKMODE=0, SEEKUP=0, SEEK=0, DISABLE=0, ENABLE=1
+            powercfg_tuner = 0x4001  # Bit 15=DSMUTE, bit 14=DMUTE, bit 0=ENABLE, bit 6=DISABLE(0)
+            self._write_register(self.POWERCFG, powercfg_tuner)
+            time.sleep(0.2)
+
             # Configureer voor stereo ontvangst
             self._write_register(self.SYSCONFIG1, 0x1000)  # RDS enable
             self._write_register(self.SYSCONFIG2, 0x0F10)  # Volume = 15 (max)
+
+            # Verifieer dat tuner actief is
+            powercfg_read = self._read_register(self.POWERCFG)
+            logger.info(f"POWERCFG register: 0x{powercfg_read:04X}")
+            if powercfg_read & 0x0040:  # DISABLE bit
+                logger.warning("⚠️  Tuner lijkt nog steeds disabled!")
+            else:
+                logger.info("✅ Tuner is enabled")
             
             logger.info("✅ SI4703 succesvol geïnitialiseerd")
             return True
