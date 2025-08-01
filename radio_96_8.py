@@ -57,6 +57,7 @@ class Radio968:
         signal.signal(signal.SIGTERM, self._signal_handler)
         
         # Setup GPIO
+        GPIO.setwarnings(False)  # Disable warnings
         GPIO.setmode(GPIO.BCM)
         GPIO.setup(self.rst_pin, GPIO.OUT)
         GPIO.setup(self.sdio_pin, GPIO.OUT)
@@ -147,36 +148,55 @@ class Radio968:
         freq_mhz = 96.8
         try:
             logger.info(f"📻 Afstemmen op {freq_mhz} MHz...")
-            
+
             # Bereken channel waarde voor SI4703
-            # Channel = (Freq - 87.5) / 0.1
-            channel = int((freq_mhz - 87.5) / 0.1)
-            
+            # Channel = (Freq - 87.5) / 0.1 (100kHz stappen)
+            channel = int(round((freq_mhz - 87.5) / 0.1))
+
             logger.info(f"Channel berekening: {freq_mhz} MHz = channel {channel}")
-            
+            logger.info(f"Verificatie: channel {channel} = {87.5 + (channel * 0.1):.1f} MHz")
+
+            # Lees huidige CHANNEL register
+            current_channel_reg = self._read_register(self.CHANNEL)
+            logger.info(f"Huidig CHANNEL register: 0x{current_channel_reg:04X}")
+
             # Schrijf channel naar register met TUNE bit
             channel_reg = (channel & 0x03FF) | 0x8000  # TUNE bit = 1
+            logger.info(f"Nieuwe CHANNEL register: 0x{channel_reg:04X}")
             self._write_register(self.CHANNEL, channel_reg)
-            
+
             # Wacht tot tuning compleet is
-            logger.info("Wachten op tuning...")
+            logger.info("Wachten op tuning complete (STC bit)...")
+            tune_success = False
             for i in range(50):
                 status = self._read_register(self.STATUSRSSI)
+                logger.debug(f"STATUSRSSI: 0x{status:04X}")
                 if status & 0x4000:  # STC bit
-                    logger.info(f"Tuning compleet na {i*0.1:.1f} seconden")
+                    logger.info(f"✅ Tuning compleet na {i*0.1:.1f} seconden")
+                    tune_success = True
                     break
                 time.sleep(0.1)
-            else:
-                logger.warning("Tuning timeout")
-            
-            # Clear TUNE bit
+
+            if not tune_success:
+                logger.warning("⚠️  Tuning timeout - geen STC bit ontvangen")
+                # Probeer alsnog door te gaan
+
+            # Clear TUNE bit (BELANGRIJK!)
+            logger.info("Clearing TUNE bit...")
             self._write_register(self.CHANNEL, channel & 0x03FF)
-            
-            # Verifieer frequentie
+
+            # Wacht even en verifieer frequentie
+            time.sleep(0.2)
             actual_freq = self.get_current_frequency()
-            logger.info(f"✅ Afgestemd op {actual_freq:.1f} MHz")
+            logger.info(f"✅ Afgestemd op {actual_freq:.1f} MHz (gevraagd: {freq_mhz})")
+
+            # Check of frequentie correct is
+            if abs(actual_freq - freq_mhz) > 0.2:
+                logger.error(f"❌ Frequentie mismatch! Gevraagd: {freq_mhz}, Werkelijk: {actual_freq:.1f}")
+                return False
+
             return True
-            
+
         except Exception as e:
             logger.error(f"❌ Fout bij afstemmen: {e}")
             return False
