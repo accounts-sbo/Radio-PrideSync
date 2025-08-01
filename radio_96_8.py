@@ -105,9 +105,20 @@ class Radio968:
             self._write_register(self.POWERCFG, powercfg_tuner)
             time.sleep(0.2)
 
-            # Configureer voor stereo ontvangst
-            self._write_register(self.SYSCONFIG1, 0x1000)  # RDS enable
+            # Configureer voor Europese band en stereo ontvangst
+            # SYSCONFIG1: BAND[7:6] = 00 (Europa 87.5-108MHz), RDS enable
+            sysconfig1 = 0x0000 | 0x1000  # Band=00 (Europa) + RDS enable
+            logger.info(f"Setting SYSCONFIG1 voor Europa band: 0x{sysconfig1:04X}")
+            self._write_register(self.SYSCONFIG1, sysconfig1)
+
+            # SYSCONFIG2: Volume = 15 (max), seek threshold
             self._write_register(self.SYSCONFIG2, 0x0F10)  # Volume = 15 (max)
+
+            # Verifieer band instelling
+            sysconfig1_read = self._read_register(self.SYSCONFIG1)
+            band_bits = (sysconfig1_read >> 6) & 0x03
+            logger.info(f"SYSCONFIG1 gelezen: 0x{sysconfig1_read:04X}")
+            logger.info(f"Band bits [7:6]: {band_bits:02b} ({'Europa' if band_bits == 0 else 'US/Japan' if band_bits == 1 else 'Japan Wide' if band_bits == 2 else 'Reserved'})")
 
             # Verifieer dat tuner actief is
             powercfg_read = self._read_register(self.POWERCFG)
@@ -156,34 +167,57 @@ class Radio968:
             logger.info(f"Channel berekening: {freq_mhz} MHz = channel {channel}")
             logger.info(f"Verificatie: channel {channel} = {87.5 + (channel * 0.1):.1f} MHz")
 
-            # Lees huidige CHANNEL register
-            current_channel_reg = self._read_register(self.CHANNEL)
-            logger.info(f"Huidig CHANNEL register: 0x{current_channel_reg:04X}")
+            # Log alle registers VOOR tuning
+            logger.info("=== REGISTERS VOOR TUNING ===")
+            logger.info(f"SYSCONFIG1: 0x{self._read_register(self.SYSCONFIG1):04X}")
+            logger.info(f"CHANNEL voor: 0x{self._read_register(self.CHANNEL):04X}")
+            logger.info(f"STATUSRSSI voor: 0x{self._read_register(self.STATUSRSSI):04X}")
+            logger.info(f"READCHAN voor: 0x{self._read_register(self.READCHAN):04X}")
 
-            # Schrijf channel naar register met TUNE bit
+            # STAP 1: Schrijf channel naar register met TUNE bit
             channel_reg = (channel & 0x03FF) | 0x8000  # TUNE bit = 1
-            logger.info(f"Nieuwe CHANNEL register: 0x{channel_reg:04X}")
+            logger.info(f"STAP 1: Schrijf CHANNEL register: 0x{channel_reg:04X}")
             self._write_register(self.CHANNEL, channel_reg)
 
-            # Wacht tot tuning compleet is
-            logger.info("Wachten op tuning complete (STC bit)...")
+            # STAP 2: Wacht tot STC bit = 1
+            logger.info("STAP 2: Wachten op STC bit = 1...")
             tune_success = False
             for i in range(50):
                 status = self._read_register(self.STATUSRSSI)
-                logger.debug(f"STATUSRSSI: 0x{status:04X}")
-                if status & 0x4000:  # STC bit
-                    logger.info(f"✅ Tuning compleet na {i*0.1:.1f} seconden")
+                stc_bit = (status & 0x4000) != 0
+                logger.info(f"  Poging {i+1}: STATUSRSSI=0x{status:04X}, STC={stc_bit}")
+                if stc_bit:
+                    logger.info(f"✅ STC bit gezet na {i*0.1:.1f} seconden")
                     tune_success = True
                     break
                 time.sleep(0.1)
 
             if not tune_success:
-                logger.warning("⚠️  Tuning timeout - geen STC bit ontvangen")
-                # Probeer alsnog door te gaan
+                logger.error("❌ STAP 2 GEFAALD: Geen STC bit ontvangen!")
+                return False
 
-            # Clear TUNE bit (BELANGRIJK!)
-            logger.info("Clearing TUNE bit...")
+            # STAP 3: Clear TUNE bit (channel zonder 0x8000)
+            logger.info("STAP 3: Clear TUNE bit...")
             self._write_register(self.CHANNEL, channel & 0x03FF)
+
+            # STAP 4: Wacht tot STC bit = 0 (cleared)
+            logger.info("STAP 4: Wachten tot STC bit cleared...")
+            for i in range(30):
+                status = self._read_register(self.STATUSRSSI)
+                stc_bit = (status & 0x4000) != 0
+                logger.info(f"  Check {i+1}: STATUSRSSI=0x{status:04X}, STC={stc_bit}")
+                if not stc_bit:
+                    logger.info(f"✅ STC bit cleared na {i*0.1:.1f} seconden")
+                    break
+                time.sleep(0.1)
+            else:
+                logger.warning("⚠️  STC bit niet cleared, maar ga door...")
+
+            # Log alle registers NA tuning
+            logger.info("=== REGISTERS NA TUNING ===")
+            logger.info(f"CHANNEL na: 0x{self._read_register(self.CHANNEL):04X}")
+            logger.info(f"STATUSRSSI na: 0x{self._read_register(self.STATUSRSSI):04X}")
+            logger.info(f"READCHAN na: 0x{self._read_register(self.READCHAN):04X}")
 
             # Wacht even en verifieer frequentie
             time.sleep(0.2)
